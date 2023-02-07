@@ -84,33 +84,49 @@ def infoFromTestOrder(one):
     return row
 
 def getResults(soup):
+    #outline general header terms desired
+    GeneralHeaders=['CreationDateTime','Name','Barcode','FinalInterpretation','CT','Position','Info','SpecimenClass','Target','Value']
+    #get testOrder info (each row of df)
     search = soup.find_all('TestOrder')
-    rows=[]
     for one in search:
-        rows.append(infoFromTestOrder(one))
-    dfResults=pd.DataFrame(rows)
+        row = infoFromTestOrder(one)
+        #convert row (dict) to df
+        df=pd.DataFrame([row])
+        #get all fields that contain a general header
+        SpecificHeaders=[]
+        for x in df:
+            for y in GeneralHeaders:
+                if y in x:
+                    SpecificHeaders.append(x)
+        #filter df w/ desired fields
+        df=df[SpecificHeaders]
+        #try to append to main df if exists, except: create main_df
+        try:
+            dfResults=pd.concat([dfResults,df],axis=0)
+        except:
+            dfResults=df
     return dfResults
 
 def getTestName(dfResults):
     testName=""
     for x in dfResults:
         if "name" in x.lower():
-            testName=dfResults[x][0]
+            testName=dfResults[x].unique()[0]
     return testName
 
-def addControlLabels(dfResults,testName):
+def addControlLabels(testName):
     ### add barcode values for control     
     # add barcode values for controls
     PosControlName=""
     HxV=['hiv','hbv','hcv']
-    if testName.lower() in HxV:
+    testName=testName.lower()
+    if testName in HxV:
         print("control is HxV!!!")
-        dfResults.loc[len(dfResults)-3,'Barcode']="HxV H (+) C"
         PosControlName="HxV L (+) C"
-    elif "HPV" in testName:
+    elif "hpv" in testName:
         print("control is HPV!!!")
         PosControlName="HPV (+) C"
-    elif "CT" in testName or "NG" in testName:
+    elif "ct" in testName or "ng" in testName:
         print("control is CT/NG!!!")
         PosControlName="CT/NG (+) C"
     elif "tgt" in testName.lower():
@@ -118,32 +134,32 @@ def addControlLabels(dfResults,testName):
         PosControlName="SARS-CoV-2 (+) C"
     else:
         print("test name not found for labelling control samples")
-    dfResults.loc[len(dfResults)-2,'Barcode']=PosControlName
-    dfResults.loc[len(dfResults)-1,'Barcode']= "(-) Ctrl"
-    return dfResults,PosControlName
+    return PosControlName
 
 def assignReagentVariables(dfRs,PosControlName):
     ### reagent info
-    #kit lot
+    #kit lot, expiration, onboard time
     ReagentKitLot=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['LotNumber'].values[0])
+    ReagentExpiration=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['Expiration'].values[0]).split('T')[0]
+    ReagentOnboard=int(float(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['OnboardTime'].values[0])/60/60/24) # convert to days from seconds
     #PC lot #
     PCLotNo=str(dfRs.loc[dfRs['ReagentName']==PosControlName]['LotNumber'].values[0])
     #NC lot#
     NCLotNo=str(dfRs.loc[dfRs['ReagentName']=='(-) Ctrl']['LotNumber'].values[0])
-    return(ReagentKitLot,PCLotNo,NCLotNo)
+    return(ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard)
 
 def assignResultsVariablesHIV(dfResults):
     ### HIV
     #HPC CT
-    HPC_CT=float(dfResults.loc[dfResults['Barcode']=='HxV H (+) C']['CT'].values[0])
+    HPC_CT=float(dfResults.loc[dfResults['Info']=='HxV H (+) C']['CT'].values[0])
     #HPC IU
-    HPC_IU=float(dfResults.loc[dfResults['Barcode']=='HxV H (+) C']['Value'].values[0])
+    HPC_IU=float(dfResults.loc[dfResults['Info']=='HxV H (+) C']['Value'].values[0])
     #LPC CT
-    LPC_CT=float(dfResults.loc[dfResults['Barcode']=='HxV L (+) C']['CT'].values[0])
+    LPC_CT=float(dfResults.loc[dfResults['Info']=='HxV L (+) C']['CT'].values[0])
     #LPC IU
-    LPC_IU=float(dfResults.loc[dfResults['Barcode']=='HxV L (+) C']['Value'].values[0])
+    LPC_IU=float(dfResults.loc[dfResults['Info']=='HxV L (+) C']['Value'].values[0])
     #NC Result
-    NC_CT=float(dfResults.loc[dfResults['Barcode']=='(-) Ctrl']['CT'].values[0])
+    NC_CT=float(dfResults.loc[dfResults['Info']=='(-) C']['CT'].values[0])
     if NC_CT >0:
         pass
     else:
@@ -295,7 +311,7 @@ def Main(name):
     except:
         print("test not found")
     
-
+    print('getting reagents')
     ### Reagents info extraction################################################################
     #get regeagents
     dfRs=getReagents(soup)
@@ -304,21 +320,23 @@ def Main(name):
     #join reagents w kits info
     dfRs=pd.concat([dfRs,dfKit])
     
-    
+    print('getting results')
     ### Results info extraction ################################################################
     dfResults=getResults(soup) 
+    dfResults.to_csv("M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\All_results\\" + test + "_all_results_cobas" + ".csv", index=False ,mode='a', header=False, )
         
     #get testName
     testName=getTestName(dfResults)
+    testName=testName.strip().lower()
     #add control labels for results
-    dfResults,PosControlName=addControlLabels(dfResults,testName)
+    PosControlName=addControlLabels(testName)
     sampleNum=len(dfResults)
     
+    print('assigning variables')
     #assign reagent variables that will be written to QC sheet
-    ReagentKitLot,PCLotNo,NCLotNo=assignReagentVariables(dfRs,PosControlName) 
+    ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard=assignReagentVariables(dfRs,PosControlName) 
     
     #assign result variables that will be written to QC sheet
-    testName=testName.strip().lower()
     HxV=['hiv','hbv','hcv']
     if testName in HxV:
         HPC_CT,HPC_IU,LPC_CT,LPC_IU,NC_CT=assignResultsVariablesHIV(dfResults)
@@ -335,11 +353,13 @@ def Main(name):
     else:
         print("testName not found: ", testName)
         
-    ### assign values
+
     #assign reagent values
     dftest['auto REAGENT KIT LOT']=ReagentKitLot
     dftest['auto POSITIVE CTRL KIT LOT#']=PCLotNo
     dftest['auto NEGATIVE CTRL LOT#']=NCLotNo
+    dftest['REAGENT KIT expiration']=ReagentExpiration
+    dftest['REAGENT KIT onboard days']=ReagentOnboard
     #assign result values
     dftest['Samples + controls']=sampleNum
     
@@ -369,7 +389,9 @@ def Main(name):
         dftest['INVALID']=invalidSamples
     else:
         print("test name not found")
-
+    
+    print('writing to QC sheets')
+    ### write values to QCsheet 
     writeToQCSheets(dftest,sheet,BatchNum)
     
 if __name__=="__main__":
@@ -383,8 +405,8 @@ if __name__=="__main__":
                 Main(path)
                 newPath="old XML files/"+x  
                 os.rename(path,newPath)
-                print(" complete!",x)
-            except:
-                print("\n \n error found, see above text \n \n")
+                print(" complete!",x,"\n")
+            except Exception as e: 
+                print("\n",e," \n error found, see above text \n \n")
     print("\n \n Program complete. Window will close shortly")        
     time.sleep(10)
