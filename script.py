@@ -11,285 +11,350 @@ import time
 
 ### declare the function for parsing specific query to return a list of dicts
 def parse_xml(query,soup):
-    search = soup.find_all(query)
-    # parse content into dicts
-    dicts=[]
-    for data in search:
-        if data.Carrier:
-            data.attrs.update(data.Carrier.attrs)
-        dicts.append(data.attrs)   
-    return dicts
+    try:
+        search = soup.find_all(query)
+        # parse content into dicts
+        dicts=[]
+        for data in search:
+            if data.Carrier:
+                data.attrs.update(data.Carrier.attrs)
+            dicts.append(data.attrs)   
+        return dicts
+    except Exception as e: 
+        print("\n Error in parse_xml: ",e,"\n")
+        raise 
     
 def getReagents(soup):
-    #query xml for reagents
-    dicts=parse_xml('ReagentContainer',soup)
-    #assemble into dataframe
-    dfRs=pd.DataFrame.from_dict(dicts)
-    dfRs=dfRs[['ReagentName','SerialNumber','LotNumber','Expiration','OnboardTime']] # for reagents
-    dfRs=dfRs.drop_duplicates()
-    dfRs=dfRs.replace('(-) C', '(-) Ctrl')
-    return dfRs
-
+    try:
+        #query xml for reagents
+        dicts=parse_xml('ReagentContainer',soup)
+        #assemble into dataframe
+        dfRs=pd.DataFrame.from_dict(dicts)
+        dfRs=dfRs[['ReagentName','SerialNumber','LotNumber','Expiration','OnboardTime']] # for reagents
+        dfRs=dfRs.drop_duplicates()
+        dfRs=dfRs.replace('(-) C', '(-) Ctrl')
+        return dfRs
+    except Exception as e: 
+        print("\n Error in getReagents: ",e,"\n")
+        raise
 def getReagentKit(soup,test):
-    KitMaterialNumbers={"HBV":"9040820190_A",
-             "HCV":"9040765190_A",
-             "HIV":"9040803190_A", 
-             "CTNG":"7460066190_A",
-             "SARS": "9343733190_A",
-             "HPV":"7460155190_A",}
-    #query xml for kit
-    dicts=parse_xml('InventoryItemTracking',soup)
+    try:
+        KitMaterialNumbers={"HBV":"9040820190_A",
+                 "HCV":"9040765190_A",
+                 "HIV":"9040803190_A", 
+                 "CTNG":"7460066190_A",
+                 "SARS": "9343733190_A",
+                 "HPV":"7460155190_A",}
+        #query xml for kit
+        dicts=parse_xml('InventoryItemTracking',soup)
 
-    #assemble into dataframe
-    dfK=pd.DataFrame.from_dict(dicts)
-    dfK=dfK[['SerialNumber','LotNumber','Expiration','OnboardTime','MaterialNumber']] # for reagents
-    dfK=dfK.drop_duplicates()
-    dfK['ReagentName']="Reagent Kit"
-    dfK=dfK.loc[dfK['MaterialNumber']==KitMaterialNumbers[test]]
-    return dfK
-
+        #assemble into dataframe
+        dfK=pd.DataFrame.from_dict(dicts)
+        dfK=dfK[['SerialNumber','LotNumber','Expiration','OnboardTime','MaterialNumber']] # for reagents
+        dfK=dfK.drop_duplicates()
+        dfK['ReagentName']="Reagent Kit"
+        dfK=dfK.loc[dfK['MaterialNumber']==KitMaterialNumbers[test]]
+        return dfK
+    except Exception as e: 
+        print("\n Error in getReagentsKit: ",e,"\n")
+        raise
 def rename_keys(my_dict,suffix):
-    """ rename all keys in a dictionary with an added _suffix"""
-    # create new key names from current by adding _suffix to it
-    new_keys=[]
-    suffix='_'+str(suffix)
-    for x in my_dict:
-        new=x+suffix
-        new_keys.append(new)
-    
-    #create and return new dictionary
-    d1 = dict( zip( list(my_dict.keys()), new_keys) )
-    return {d1[oldK]: value for oldK, value in my_dict.items()}
-    
+    try:
+        """ rename all keys in a dictionary with an added _suffix"""
+        # create new key names from current by adding _suffix to it
+        new_keys=[]
+        suffix='_'+str(suffix)
+        for x in my_dict:
+            new=x+suffix
+            new_keys.append(new)
+        
+        #create and return new dictionary
+        d1 = dict( zip( list(my_dict.keys()), new_keys) )
+        return {d1[oldK]: value for oldK, value in my_dict.items()}
+    except Exception as e: 
+        print("\n Error in rename_keys: ",e,"\n")
+        raise
     
 def infoFromTestOrder(one):
-    """ get Specimen and TestResult data from a TestOrder tag"""
-    row={}
-    for x in one.children:
-        # get sample info like barcode
-        if x.name =="Specimen":
-            for y in x.children:
-                row.update(y.attrs)
-
-        # get test results info
-        elif x.name =="TestResults":
-            for num,y in enumerate(x.children):
-                if num==0:
+    try:
+        """ get Specimen and TestResult data from a TestOrder tag"""
+        row={}
+        for x in one.children:
+            # get sample info like barcode
+            if x.name =="Specimen":
+                for y in x.children:
                     row.update(y.attrs)
-                else:
-                    new_dict= rename_keys(y.attrs,num)
-                    row.update(new_dict)
-                    multipleTargets=False
-               
-    return row
 
+            # get test results info
+            elif x.name =="TestResults":
+                for num,y in enumerate(x.children):
+                    if num==0:
+                        row.update(y.attrs)
+                    else:
+                        new_dict= rename_keys(y.attrs,num)
+                        row.update(new_dict)
+                        multipleTargets=False
+                   
+        return row
+    except Exception as e: 
+        print("\n Error in infoFromTestOrder: ",e,"\n")
+        raise
+        
 def getResults(soup):
-    #outline general header terms desired
-    GeneralHeaders=['CreationDateTime','Name','Barcode','FinalInterpretation','CT','Position','Info','SpecimenClass','Target','Value']
-    #get testOrder info (each row of df)
-    search = soup.find_all('TestOrder')
-    for one in search:
-        row = infoFromTestOrder(one)
-        #convert row (dict) to df
-        df=pd.DataFrame([row])
-        #get all fields that contain a general header
-        SpecificHeaders=[]
-        for x in df:
-            for y in GeneralHeaders:
-                if y in x:
-                    SpecificHeaders.append(x)
-        #filter df w/ desired fields
-        df=df[SpecificHeaders]
-        #try to append to main df if exists, except: create main_df
-        try:
-            dfResults=pd.concat([dfResults,df],axis=0)
-        except:
-            dfResults=df
-    return dfResults
-
+    try:
+        #outline general header terms desired
+        GeneralHeaders=['CreationDateTime','Name','Barcode','FinalInterpretation','CT','Position','Info','SpecimenClass','Target','Value']
+        #get testOrder info (each row of df)
+        search = soup.find_all('TestOrder')
+        for one in search:
+            row = infoFromTestOrder(one)
+            #convert row (dict) to df
+            df=pd.DataFrame([row])
+            #get all fields that contain a general header
+            SpecificHeaders=[]
+            for x in df:
+                for y in GeneralHeaders:
+                    if y in x:
+                        SpecificHeaders.append(x)
+            #filter df w/ desired fields
+            df=df[SpecificHeaders]
+            #try to append to main df if exists, except: create main_df
+            try:
+                dfResults=pd.concat([dfResults,df],axis=0)
+            except:
+                dfResults=df
+        return dfResults
+    except Exception as e: 
+        print("\n Error in getResults: ",e,"\n")
+        raise
+        
 def getTestName(dfResults):
-    testName=""
-    for x in dfResults:
-        if "name" in x.lower():
-            testName=dfResults[x].unique()[0]
-    return testName
-
+    try:
+        testName=""
+        for x in dfResults:
+            if "name" in x.lower():
+                testName=dfResults[x].unique()[0]
+        return testName
+    except Exception as e: 
+        print("\n Error in getTestName: ",e,"\n")
+        raise
+        
 def addControlLabels(testName):
-    ### add barcode values for control     
-    # add barcode values for controls
-    PosControlName=""
-    HxV=['hiv','hbv','hcv']
-    testName=testName.lower()
-    if testName in HxV:
-        print("control is HxV!!!")
-        PosControlName="HxV L (+) C"
-    elif "hpv" in testName:
-        print("control is HPV!!!")
-        PosControlName="HPV (+) C"
-    elif "ct" in testName or "ng" in testName:
-        print("control is CT/NG!!!")
-        PosControlName="CT/NG (+) C"
-    elif "tgt" in testName.lower():
-        print("control is SARS!!!")
-        PosControlName="SARS-CoV-2 (+) C"
-    else:
-        print("test name not found for labelling control samples")
-    return PosControlName
-
+    try:
+        ### add barcode values for control     
+        # add barcode values for controls
+        PosControlName=""
+        HxV=['hiv','hbv','hcv']
+        testName=testName.lower()
+        if testName in HxV:
+            print("control is HxV!!!")
+            PosControlName="HxV L (+) C"
+        elif "hpv" in testName:
+            print("control is HPV!!!")
+            PosControlName="HPV (+) C"
+        elif "ct" in testName or "ng" in testName:
+            print("control is CT/NG!!!")
+            PosControlName="CT/NG (+) C"
+        elif "tgt" in testName.lower():
+            print("control is SARS!!!")
+            PosControlName="SARS-CoV-2 (+) C"
+        else:
+            print("test name not found for labelling control samples")
+        return PosControlName
+    except Exception as e: 
+        print("\n Error in addControlLabels: ",e,"\n")
+        raise
+        
 def assignReagentVariables(dfRs,PosControlName):
-    ### reagent info
-    #kit lot, expiration, onboard time
-    ReagentKitLot=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['LotNumber'].values[0])
-    ReagentExpiration=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['Expiration'].values[0]).split('T')[0]
-    ReagentOnboard=int(float(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['OnboardTime'].values[0])/60/60/24) # convert to days from seconds
-    #PC lot #
-    PCLotNo=str(dfRs.loc[dfRs['ReagentName']==PosControlName]['LotNumber'].values[0])
-    #NC lot#
-    NCLotNo=str(dfRs.loc[dfRs['ReagentName']=='(-) Ctrl']['LotNumber'].values[0])
-    return(ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard)
+    try:
+        ### reagent info
+        #kit lot, expiration, onboard time
+        ReagentKitLot=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['LotNumber'].values[0])
+        ReagentExpiration=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['Expiration'].values[0]).split('T')[0]
+        ReagentOnboard=int(float(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['OnboardTime'].values[0])/60/60/24) # convert to days from seconds
+        #PC lot #
+        PCLotNo=str(dfRs.loc[dfRs['ReagentName']==PosControlName]['LotNumber'].values[0])
+        #NC lot#
+        NCLotNo=str(dfRs.loc[dfRs['ReagentName']=='(-) Ctrl']['LotNumber'].values[0])
+        return(ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard)
+    except Exception as e: 
+        print("\n Error in assignReagentVariables: ",e,"\n")
+        raise
 
 def assignResultsVariablesHIV(dfResults):
-    ### HIV
-    #HPC CT
-    HPC_CT=float(dfResults.loc[dfResults['Info']=='HxV H (+) C']['CT'].values[0])
-    #HPC IU
-    HPC_IU=float(dfResults.loc[dfResults['Info']=='HxV H (+) C']['Value'].values[0])
-    #LPC CT
-    LPC_CT=float(dfResults.loc[dfResults['Info']=='HxV L (+) C']['CT'].values[0])
-    #LPC IU
-    LPC_IU=float(dfResults.loc[dfResults['Info']=='HxV L (+) C']['Value'].values[0])
-    #NC Result
-    NC_CT=float(dfResults.loc[dfResults['Info']=='(-) C']['CT'].values[0])
-    if NC_CT >0:
-        pass
-    else:
-        NC_CT="None"
-    return(HPC_CT,HPC_IU,LPC_CT,LPC_IU,NC_CT)
-    
+    try:
+        ### HIV
+        #HPC CT
+        HPC_CT=float(dfResults.loc[dfResults['Info']=='HxV H (+) C']['CT'].values[0])
+        #HPC IU
+        HPC_IU=float(dfResults.loc[dfResults['Info']=='HxV H (+) C']['Value'].values[0])
+        #LPC CT
+        LPC_CT=float(dfResults.loc[dfResults['Info']=='HxV L (+) C']['CT'].values[0])
+        #LPC IU
+        LPC_IU=float(dfResults.loc[dfResults['Info']=='HxV L (+) C']['Value'].values[0])
+        #NC Result
+        NC_CT=float(dfResults.loc[dfResults['Info']=='(-) C']['CT'].values[0])
+        if NC_CT >0:
+            pass
+        else:
+            NC_CT="None"
+        return(HPC_CT,HPC_IU,LPC_CT,LPC_IU,NC_CT)
+    except Exception as e: 
+        print("\n Error in assignResultsVariablesHIV: ",e,"\n")
+        raise
+        
 def assignResultsVariablesSARS(dfResults):
-    tgt1_positives=0
-    tgt2_positives=0
-    invalidSamples=0
-    for x in dfResults:
-        if "FinalInterpretation" in x:
-            for y in dfResults[x].unique():
-                if "Positive"in y:
-                    tgt1_positives=len(dfResults[x].loc[dfResults[x]==y])
-        if "FinalInterpretation_1" in x:
-            for y in dfResults[x].unique():
-                if "Positive"in y:
-                    tgt2_positives=len(dfResults[x].loc[dfResults[x]==y])
-                if "invalid"in y.lower():
-                    invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
-
-
-    return(tgt1_positives,tgt2_positives,invalidSamples)  
-    
+    try:
+        tgt1_positives=0
+        tgt2_positives=0
+        invalidSamples=0
+        for x in dfResults:
+            if "FinalInterpretation" in x:
+                for y in dfResults[x].unique():
+                    if "Positive"in y:
+                        tgt1_positives=len(dfResults[x].loc[dfResults[x]==y])
+            if "FinalInterpretation_1" in x:
+                for y in dfResults[x].unique():
+                    if "Positive"in y:
+                        tgt2_positives=len(dfResults[x].loc[dfResults[x]==y])
+                    if "invalid"in y.lower():
+                        invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
+        return(tgt1_positives,tgt2_positives,invalidSamples)  
+    except Exception as e: 
+        print("\n Error in assignResultVariablesSARS: ",e,"\n")
+        raise
     
 def assignResultsVariablesHPV(dfResults):
-    ### HPV
-    HPV16Positives=0
-    HPV18Positives=0
-    HPVotherPositives=0
-    invalidSamples=0
-    for x in dfResults:
-        if "FinalInterpretation" in x:
-            for y in dfResults[x].unique():
-                if "Positive"in y:
-                    #print(y,"positives: ",len(dfResults[x].loc[dfResults[x]==y]), '\n')
-                    if "16" in y:
-                        HPV16Positives=len(dfResults[x].loc[dfResults[x]==y]) # no minus 1 for controls, they are valid not positive
-                    elif "18" in y:
-                        HPV18Positives=len(dfResults[x].loc[dfResults[x]==y])
-                    elif "other" in y.lower():
-                        HPVotherPositives=len(dfResults[x].loc[dfResults[x]==y])
-                if "invalid"in y.lower():
-                    invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
-    return(HPV16Positives,HPV18Positives,HPVotherPositives,invalidSamples)
-
+    try:
+        ### HPV
+        HPV16Positives=0
+        HPV18Positives=0
+        HPVotherPositives=0
+        invalidSamples=0
+        for x in dfResults:
+            if "FinalInterpretation" in x:
+                for y in dfResults[x].unique():
+                    if "Positive"in y:
+                        if "16" in y:
+                            HPV16Positives=len(dfResults[x].loc[dfResults[x]==y]) # no minus 1 for controls, they are valid not positive
+                        elif "18" in y:
+                            HPV18Positives=len(dfResults[x].loc[dfResults[x]==y])
+                        elif "other" in y.lower():
+                            HPVotherPositives=len(dfResults[x].loc[dfResults[x]==y])
+                    if "invalid"in y.lower():
+                        invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
+        return(HPV16Positives,HPV18Positives,HPVotherPositives,invalidSamples)
+    except Exception as e: 
+        print("\n Error in assignResultsVariablesHPV: ",e,"\n")
+        raise
+        
 def assignResultVariablesCTNG(dfResults):
-    ### CTNG    
-    swabSampleCount=0
-    urineSampleCount=0
-    thinprepSampleCount=0
-    CTpositives=0
-    NGpostives=0
-    invalidSamples=0
-    for x in dfResults:
-        if "FinalInterpretation" in x:
-            for y in dfResults[x].unique():
-                if "Positive"in y:
-                    #print(y,"positives: ",len(dfResults[x].loc[dfResults[x]==y]), '\n')
-                    if "CT" in y:
-                        CTpositives=len(dfResults[x].loc[dfResults[x]==y]) #no minus 1 for controls, they are valid not positive
-                    elif "NG" in y:
-                        NGpostives=len(dfResults[x].loc[dfResults[x]==y])
-                if "invalid"in y.lower():
-                    invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
-        if "Info" in x:
-            for y in dfResults[x].unique():
-                ymod=str(y).lower()
-                if "swab"in ymod:
-                    swabSampleCount=len(dfResults[x].loc[dfResults[x]==y])
-                elif "urine"in ymod:
-                    urineSampleCount=len(dfResults[x].loc[dfResults[x]==y])
-                elif "preserv"in ymod:
-                    thinprepSampleCount=len(dfResults[x].loc[dfResults[x]==y])
-    #print(" Swabs ",swabSampleCount,"\n","Urine: ",urineSampleCount,"\n","thinpreps: : ",thinprepSampleCount)
-    #print(" CT positives: ",CTpositives,"\n","NG positives: ",NGpostives,"\n","invalids: : ",invalidSamples)
-    return(swabSampleCount,urineSampleCount,thinprepSampleCount,CTpositives,NGpostives,invalidSamples)
-
+    try:
+        ### CTNG    
+        swabSampleCount=0
+        urineSampleCount=0
+        thinprepSampleCount=0
+        CTpositives=0
+        NGpostives=0
+        invalidSamples=0
+        for x in dfResults:
+            if "FinalInterpretation" in x:
+                for y in dfResults[x].unique():
+                    if "Positive"in y:
+                        if "CT" in y:
+                            CTpositives=len(dfResults[x].loc[dfResults[x]==y]) #no minus 1 for controls, they are valid not positive
+                        elif "NG" in y:
+                            NGpostives=len(dfResults[x].loc[dfResults[x]==y])
+                    if "invalid"in y.lower():
+                        invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
+            if "Info" in x:
+                for y in dfResults[x].unique():
+                    ymod=str(y).lower()
+                    if "swab"in ymod:
+                        swabSampleCount=len(dfResults[x].loc[dfResults[x]==y])
+                    elif "urine"in ymod:
+                        urineSampleCount=len(dfResults[x].loc[dfResults[x]==y])
+                    elif "preserv"in ymod:
+                        thinprepSampleCount=len(dfResults[x].loc[dfResults[x]==y])
+        return(swabSampleCount,urineSampleCount,thinprepSampleCount,CTpositives,NGpostives,invalidSamples)
+    except Exception as e: 
+        print("\n Error in assignResultVariablesCTNG: ",e,"\n")
+        raise
+        
 def prepQCdata(test,soup):
-    # path as copied from file explorer window
-    #added extra "\" in front of "\n"'s as required
-    path=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\test auto.xlsx')
-    #convert to linux
-    cpath=path.replace('\\','/')
-    ### get batch # for joining 
-    dicts=parse_xml('OrderGroup',soup)
-    dfb=pd.DataFrame.from_dict(dicts)
-    BatchNum=max([int(x) for x in dfb['OrderId'].unique()])
-
-    #get and read correct sheet
-    sheets={"HCV":"HCVrunQC",
-           "HIV":"HIVrunQC",
-           "HBV":"HBVrunQC",
-           "HPV":"HPVrunQC",
-           "SARS": "SARSrunQC",
-           "CTNG":"CTNGrunQC"}
-    sheet=sheets[test.lower().upper()]
-    dftest=pd.read_excel(cpath, sheet_name=sheet,header=2)
-    dftest=dftest.loc[dftest['CONTROL BATCH #']==BatchNum]
-    if len(dftest)>0:
-        print("QC file loaded!")
-    else:
-        print("Control batch ID not found")
-    return dftest,sheet,BatchNum
+    """ load the QC file and find the line with cobas batch ID that matched the XML batch number"""
+    try:
+        # path as copied from file explorer window. Added extra "\" in front of "\n"'s as required
+        path=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\test auto.xlsx')
+        #convert to linux
+        cpath=path.replace('\\','/')
+        # get batch # for joining 
+        dicts=parse_xml('OrderGroup',soup)
+        dfb=pd.DataFrame.from_dict(dicts)
+        BatchNum=max([int(x) for x in dfb['OrderId'].unique()])
+        #get and read correct sheet
+        sheets={"HCV":"HCVrunQC",
+               "HIV":"HIVrunQC",
+               "HBV":"HBVrunQC",
+               "HPV":"HPVrunQC",
+               "SARS": "SARSrunQC",
+               "CTNG":"CTNGrunQC"}
+        sheet=sheets[test.lower().upper()]
+        dftest=pd.read_excel(cpath, sheet_name=sheet,header=2)
+        dftest=dftest.loc[dftest['CONTROL BATCH #']==BatchNum]
+        if len(dftest)>0:
+            print("QC file loaded!")
+        else:
+            print("Control batch ID not found")
+        return dftest,sheet,BatchNum
+    except Exception as e: 
+        print("\n Error in prepQCdata: ",e,"\n")
+        raise
         
 def writeToQCSheets(dftest,sheet,BatchNum):
-    # path as copied from file explorer window
-    #added extra "\" in front of "\n"'s as required
-    path=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\test auto.xlsx')
-    ### use pyxl to write to spreadsheet in order to handle dateTime object
-    #get lastrow number to write to
-    wb = load_workbook(path)
-    ws = wb[sheet]
     try:
-        dftestValues=[x for x in dataframe_to_rows(dftest, index=False, header=False)][0]
-    except:
-        print("No batch number found in sheet: ",sheet,"for control batch ID: ",BatchNum)
-    #Find Row for desired batch number
-    for row in ws.iter_cols(min_col=3,max_col=3):
-        for RowNum,cell in enumerate(row):
-            if (cell.value == BatchNum):
-                targetRow=RowNum+1
-    #Write values to excel sheet            
-    for num,x in enumerate(ws[targetRow]):
-        x.value=dftestValues[num]
-    wb.save(path)
-    wb.close()
-    
-    
+        # path as copied from file explorer window
+        #added extra "\" in front of "\n"'s as required
+        path=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\test auto.xlsx')
+        ### use pyxl to write to spreadsheet in order to handle dateTime object
+        #get lastrow number to write to
+        wb = load_workbook(path)
+        ws = wb[sheet]
+        try:
+            dftestValues=[x for x in dataframe_to_rows(dftest, index=False, header=False)][0]
+        except:
+            print("No batch number found in sheet: ",sheet,"for control batch ID: ",BatchNum)
+        #Find Row for desired batch number
+        for row in ws.iter_cols(min_col=3,max_col=3):
+            for RowNum,cell in enumerate(row):
+                if (cell.value == BatchNum):
+                    targetRow=RowNum+1
+        #Write values to excel sheet            
+        for num,x in enumerate(ws[targetRow]):
+            x.value=dftestValues[num]
+        wb.save(path)
+        wb.close()
+    except Exception as e: 
+        print("\n Error in writeToQCSheets: ",e,"\n")
+        raise
+        
+def writeToResultsSheet(dfResults, test, BatchNum):
+    """Function to write to results sheet. Requires: dfResults, test, BatchNum"""
+    path="M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\All_results\\" + test + "_all_results_cobas" + ".csv"
+    try:
+        #load results file into df
+        df=pd.read_csv(path)
+        #check if the current batch is already loaded into the results sheet
+        if BatchNum in df['Batch'].unique():
+            print("Found previous results for this batch. Results sheet won't be updated")
+        else:
+            #write data to results sheet
+            dfResults['Batch']=BatchNum
+            dfResults.to_csv(path, index=False, mode='a', header=False,)
+    except Exception as e:
+        print("\n","Error writing to results sheet: ",e)
+        raise
+        
 def Main(name):
     # reading file content
     file = open(name, "r")
@@ -311,7 +376,6 @@ def Main(name):
     except:
         print("test not found")
     
-    print('getting reagents')
     ### Reagents info extraction################################################################
     #get regeagents
     dfRs=getReagents(soup)
@@ -323,7 +387,6 @@ def Main(name):
     print('getting results')
     ### Results info extraction ################################################################
     dfResults=getResults(soup) 
-    dfResults.to_csv("M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\All_results\\" + test + "_all_results_cobas" + ".csv", index=False ,mode='a', header=False, )
         
     #get testName
     testName=getTestName(dfResults)
@@ -332,7 +395,6 @@ def Main(name):
     PosControlName=addControlLabels(testName)
     sampleNum=len(dfResults)
     
-    print('assigning variables')
     #assign reagent variables that will be written to QC sheet
     ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard=assignReagentVariables(dfRs,PosControlName) 
     
@@ -393,19 +455,22 @@ def Main(name):
     print('writing to QC sheets')
     ### write values to QCsheet 
     writeToQCSheets(dftest,sheet,BatchNum)
+    ###write to Results sheet
+    writeToResultsSheet(dfResults, test, BatchNum)
     
 if __name__=="__main__":
     #list files
     newFileFolder="new XML files/"
     for x in os.listdir(newFileFolder):
+        #if file starts with 'b'
         if x[0]=='b':
-            print("Processing file: ",x)
+            print("/t /t Processing file: ",x)
             path=newFileFolder+x 
             try:
                 Main(path)
                 newPath="old XML files/"+x  
                 os.rename(path,newPath)
-                print(" complete!",x,"\n")
+                print("/t Complete!",x,"\n")
             except Exception as e: 
                 print("\n",e," \n error found, see above text \n \n")
     print("\n \n Program complete. Window will close shortly")        
