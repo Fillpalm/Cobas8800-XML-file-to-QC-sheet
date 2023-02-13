@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 import os
 import time
+from datetime import datetime
 
 ### declare the function for parsing specific query to return a list of dicts
 def parse_xml(query,soup):
@@ -24,13 +25,25 @@ def parse_xml(query,soup):
         print("\n Error in parse_xml: ",e,"\n")
         raise 
     
+def clean_date(date):
+    """ returns datetime object from a creation/modificationdate. initially intended for getting onboard time by reagentKit's creationdate - TestOrders"""
+    date=date.split('.')[0]
+    date=date.replace('T'," ")
+    date=datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
+    date=datetime.date(date) # remove time so its just day
+    return date
+def get_assayDate(soup):
+    """get the date that the assay was ran"""
+    data=parse_xml('TestOrders',soup)
+    data=data[0]['LastModificationDateTime']
+    return data
 def getReagents(soup):
     try:
         #query xml for reagents
         dicts=parse_xml('ReagentContainer',soup)
         #assemble into dataframe
         dfRs=pd.DataFrame.from_dict(dicts)
-        dfRs=dfRs[['ReagentName','SerialNumber','LotNumber','Expiration','OnboardTime']] # for reagents
+        dfRs=dfRs[['ReagentName','SerialNumber','LotNumber','Expiration','CreationDateTime']] # for reagents
         dfRs=dfRs.drop_duplicates()
         dfRs=dfRs.replace('(-) C', '(-) Ctrl')
         return dfRs
@@ -50,7 +63,7 @@ def getReagentKit(soup,test):
 
         #assemble into dataframe
         dfK=pd.DataFrame.from_dict(dicts)
-        dfK=dfK[['SerialNumber','LotNumber','Expiration','OnboardTime','MaterialNumber']] # for reagents
+        dfK=dfK[['SerialNumber','LotNumber','Expiration','MaterialNumber','CreationDateTime']] # for reagents
         dfK=dfK.drop_duplicates()
         dfK['ReagentName']="Reagent Kit"
         dfK=dfK.loc[dfK['MaterialNumber']==KitMaterialNumbers[test]]
@@ -171,7 +184,8 @@ def assignReagentVariables(dfRs,PosControlName):
         #kit lot, expiration, onboard time
         ReagentKitLot=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['LotNumber'].values[0])
         ReagentExpiration=str(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['Expiration'].values[0]).split('T')[0]
-        ReagentOnboard=int(float(dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['OnboardTime'].values[0])/60/60/24) # convert to days from seconds
+        #onboard time from creation date of kit and Last modification date of TestOrders
+        ReagentOnboard=dfRs.loc[dfRs['ReagentName']=='Reagent Kit']['CreationDateTime'].values[0]
         #PC lot #
         PCLotNo=str(dfRs.loc[dfRs['ReagentName']==PosControlName]['LotNumber'].values[0])
         #NC lot#
@@ -348,8 +362,12 @@ def writeToResultsSheet(dfResults, test, BatchNum):
         if BatchNum in df['Batch'].unique():
             print("Found previous results for this batch. Results sheet won't be updated")
         else:
-            #write data to results sheet
+            ####write data to results sheet
+            #add cobas batch #
             dfResults['Batch']=BatchNum
+            # re-order columns
+            dfResults=dfResults[[x for x in df]]
+            #update results sheet
             dfResults.to_csv(path, index=False, mode='a', header=False,)
     except Exception as e:
         print("\n","Error writing to results sheet: ",e)
@@ -396,7 +414,10 @@ def Main(name):
     sampleNum=len(dfResults)
     
     #assign reagent variables that will be written to QC sheet
-    ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard=assignReagentVariables(dfRs,PosControlName) 
+    ReagentKitLot,PCLotNo,NCLotNo,ReagentExpiration,ReagentOnboard=assignReagentVariables(dfRs,PosControlName)
+    AssayDate=clean_date(get_assayDate(soup))
+    ReagentKitCreationDate=clean_date(ReagentOnboard)
+    ReagentOnboard=( AssayDate-ReagentKitCreationDate).days # get the difference in days from the assay run date and reagent creationdate (onboard)    
     
     #assign result variables that will be written to QC sheet
     HxV=['hiv','hbv','hcv']
@@ -464,13 +485,13 @@ if __name__=="__main__":
     for x in os.listdir(newFileFolder):
         #if file starts with 'b'
         if x[0]=='b':
-            print("/t /t Processing file: ",x)
+            print("~~~~~~~Processing file: ",x)
             path=newFileFolder+x 
             try:
                 Main(path)
                 newPath="old XML files/"+x  
                 os.rename(path,newPath)
-                print("/t Complete!",x,"\n")
+                print("Complete!",x,"\n")
             except Exception as e: 
                 print("\n",e," \n error found, see above text \n \n")
     print("\n \n Program complete. Window will close shortly")        
