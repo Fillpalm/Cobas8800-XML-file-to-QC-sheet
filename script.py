@@ -223,15 +223,15 @@ def assignResultsVariablesSARS(dfResults):
         tgt2_positives=0
         invalidSamples=0
         for x in dfResults:
-            if "FinalInterpretation" in x:
+            if x== "FinalInterpretation":
                 for y in dfResults[x].unique():
                     if "Positive"in y:
                         tgt1_positives=len(dfResults[x].loc[dfResults[x]==y])
-            if "FinalInterpretation_1" in x:
+            elif x== "FinalInterpretation_1":
                 for y in dfResults[x].unique():
                     if "Positive"in y:
                         tgt2_positives=len(dfResults[x].loc[dfResults[x]==y])
-                    if "invalid"in y.lower():
+                    elif "invalid"in y.lower():
                         invalidSamples=len(dfResults[x].loc[dfResults[x]==y])
         return(tgt1_positives,tgt2_positives,invalidSamples)  
     except Exception as e: 
@@ -295,11 +295,9 @@ def assignResultVariablesCTNG(dfResults):
         print("\n Error in assignResultVariablesCTNG: ",e,"\n")
         raise
         
-def prepQCdata(test,soup):
+def prepQCdata(test,soup,path):
     """ load the QC file and find the line with cobas batch ID that matched the XML batch number"""
     try:
-        # path as copied from file explorer window. Added extra "\" in front of "\n"'s as required
-        path=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\test auto.xlsx')
         #convert to linux
         cpath=path.replace('\\','/')
         # get batch # for joining 
@@ -317,7 +315,7 @@ def prepQCdata(test,soup):
         dftest=pd.read_excel(cpath, sheet_name=sheet,header=2)
         dftest=dftest.loc[dftest['CONTROL BATCH #']==BatchNum]
         if len(dftest)>0:
-            print("QC file loaded!")
+            pass
         else:
             print("Control batch ID not found")
         return dftest,sheet,BatchNum
@@ -325,11 +323,8 @@ def prepQCdata(test,soup):
         print("\n Error in prepQCdata: ",e,"\n")
         raise
         
-def writeToQCSheets(dftest,sheet,BatchNum):
+def writeToQCSheets(dftest,sheet,BatchNum,path):
     try:
-        # path as copied from file explorer window
-        #added extra "\" in front of "\n"'s as required
-        path=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\test auto.xlsx')
         ### use pyxl to write to spreadsheet in order to handle dateTime object
         #get lastrow number to write to
         wb = load_workbook(path)
@@ -337,7 +332,7 @@ def writeToQCSheets(dftest,sheet,BatchNum):
         try:
             dftestValues=[x for x in dataframe_to_rows(dftest, index=False, header=False)][0]
         except:
-            print("No batch number found in sheet: ",sheet,"for control batch ID: ",BatchNum)
+            print("No batch number found in sheet: ",sheet,"for control batch ID: ",BatchNum,"\n Check that the COBAS batch # was entered in the correct sheet prior to running the script.")
         #Find Row for desired batch number
         for row in ws.iter_cols(min_col=3,max_col=3):
             for RowNum,cell in enumerate(row):
@@ -373,7 +368,7 @@ def writeToResultsSheet(dfResults, test, BatchNum):
         print("\n","Error writing to results sheet: ",e)
         raise
         
-def Main(name):
+def Main(name,path):
     # reading file content
     file = open(name, "r")
     contents = file.read()
@@ -402,7 +397,6 @@ def Main(name):
     #join reagents w kits info
     dfRs=pd.concat([dfRs,dfKit])
     
-    print('getting results')
     ### Results info extraction ################################################################
     dfResults=getResults(soup) 
         
@@ -423,16 +417,16 @@ def Main(name):
     HxV=['hiv','hbv','hcv']
     if testName in HxV:
         HPC_CT,HPC_IU,LPC_CT,LPC_IU,NC_CT=assignResultsVariablesHIV(dfResults)
-        dftest,sheet,BatchNum=prepQCdata(test,soup)
+        dftest,sheet,BatchNum=prepQCdata(test,soup,path)
     elif "hpv" in testName:
         HPV16Positives,HPV18Positives,HPVotherPositives,invalidSamples=assignResultsVariablesHPV(dfResults)
-        dftest,sheet,BatchNum=prepQCdata(test,soup)
+        dftest,sheet,BatchNum=prepQCdata(test,soup,path)
     elif "ct" in testName or "ng" in testName:
         swabSampleCount,urineSampleCount,thinprepSampleCount,CTpositives,NGpostives,invalidSamples=assignResultVariablesCTNG(dfResults)
-        dftest,sheet,BatchNum=prepQCdata(test,soup)
+        dftest,sheet,BatchNum=prepQCdata(test,soup,path)
     elif "tgt" in testName.lower(): # SARS
         tgt1_positives,tgt2_positives,invalidSamples=assignResultsVariablesSARS(dfResults) 
-        dftest,sheet,BatchNum=prepQCdata(test,soup)
+        dftest,sheet,BatchNum=prepQCdata(test,soup,path)
     else:
         print("testName not found: ", testName)
         
@@ -473,26 +467,26 @@ def Main(name):
     else:
         print("test name not found")
     
-    print('writing to QC sheets')
     ### write values to QCsheet 
-    writeToQCSheets(dftest,sheet,BatchNum)
+    writeToQCSheets(dftest,sheet,BatchNum,path)
     ###write to Results sheet
     writeToResultsSheet(dfResults, test, BatchNum)
     
 if __name__=="__main__":
+    qcSheetPath=str('M:\MP Molecular Pathology\\NJ_Mol_Virology\\NJ Routine\QC Sheets\COBAS 8800\\8800  Daily QC 2023.xlsx')
     #list files
     newFileFolder="new XML files/"
     for x in os.listdir(newFileFolder):
         #if file starts with 'b'
-        if x[0]=='b':
+        if x[0].lower()=='b':
             print("~~~~~~~Processing file: ",x)
             path=newFileFolder+x 
             try:
-                Main(path)
+                Main(path,qcSheetPath)
                 newPath="old XML files/"+x  
                 os.rename(path,newPath)
                 print("Complete!",x,"\n")
             except Exception as e: 
                 print("\n",e," \n error found, see above text \n \n")
-    print("\n \n Program complete. Window will close shortly")        
-    time.sleep(10)
+    print("\n \n Program complete. You may now exit or Window will close shortly")        
+    time.sleep(30)
