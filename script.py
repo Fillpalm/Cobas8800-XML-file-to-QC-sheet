@@ -55,7 +55,7 @@ def getReagentKit(soup,test):
         KitMaterialNumbers={"HBV":"9040820190_A",
                  "HCV":"9040765190_A",
                  "HIV":"9040803190_A", 
-                 "CTNG":"7460066190_A",
+                 "CTNG":"9040501190_A",
                  "SARS": "9343733190_A",
                  "HPV":"7460155190_A",}
         #query xml for kit
@@ -66,7 +66,20 @@ def getReagentKit(soup,test):
         dfK=dfK[['SerialNumber','LotNumber','Expiration','MaterialNumber','CreationDateTime']] # for reagents
         dfK=dfK.drop_duplicates()
         dfK['ReagentName']="Reagent Kit"
-        dfK=dfK.loc[dfK['MaterialNumber']==KitMaterialNumbers[test]]
+        
+        ##Check for reagent kit by matching material number. 
+        #material number may chnge with software updates for kits (i.e. CTNG in september 2023)
+        #if the expected KitMaterialNumbers is not found:
+            # it will auto-assign the kit from the first option, and therefore lot# needs to be double checked
+            # it will also print the reagent table with lot#'s and materials #'s to confirm, and to update the new kit material #
+        if len(dfK.loc[dfK['MaterialNumber']==KitMaterialNumbers[test]]) >0:
+            dfK=dfK.loc[dfK['MaterialNumber']==KitMaterialNumbers[test]]
+        else:
+            print("The reagent kit's material number is not recognized.")
+            dfK=dfK.dropna()
+            print(dfK) #prints the reagent kit table to get the new kit # and confirm lot # to the physical box
+            dfK=dfK.head(1) # get the first option by default which is often the reagent kit
+            print("\nConfirm the reagent kit Lot# is: ", dfK['LotNumber'].item()," and update the reagent material number in the script based on the table above.")
         return dfK
     except Exception as e: 
         print("\n Error in getReagentsKit: ",e,"\n")
@@ -387,7 +400,7 @@ def Main(name,path):
                 print("test is: ",x)
                 test=x
     except:
-        print("test not found")
+        print("test not found in file name. options are: ", tests)
     
     ### Reagents info extraction################################################################
     #get regeagents
@@ -489,4 +502,4 @@ if __name__=="__main__":
             except Exception as e: 
                 print("\n",e," \n error found, see above text \n \n")
     print("\n \n Program complete. You may now exit or Window will close shortly")        
-    time.sleep(30)
+    time.sleep(120)
